@@ -1,0 +1,15 @@
+# Python
+backend/venv/
+backend/.env
+__pycache__/
+*.pyc
+*.pyo
+.cognee_system/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# System
+.DS_Store
+*.env
