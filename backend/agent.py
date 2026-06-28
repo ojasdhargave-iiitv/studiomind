@@ -1,6 +1,7 @@
 import os
+import re
 from langchain_core.messages import HumanMessage, SystemMessage
-from memory import fetch_memory, save_memory
+from memory import fetch_memory, save_memory, fetch_user_preferences
 
 def get_llm():
     """
@@ -51,30 +52,32 @@ def get_llm():
     else:
         raise RuntimeError("No valid LLM API key found. Set OPENAI_API_KEY, Gemini_API_KEY, GLM_API_KEY, or ANTHROPIC_API_KEY in .env")
 
-async def run_agent(user_message: str, project_id: str) -> dict:
+async def run_agent(user_message: str, project_id: str, user_id: str = "user_demo_001") -> dict:
     """
     Main agent function. Called by the /chat route.
     
     Flow:
-    1. Recall relevant memory from Cognee
-    2. Build system prompt with injected memory
-    3. Call Claude via LangChain
-    4. Save the exchange back to memory
-    5. Return reply + recalled_memory (for the frontend memory panel)
+     1. Recall relevant memory from Cognee (project + user scope)
+     2. Build system prompt with injected memory
+     3. Call LLM 
+     4. Remember this exchange
+     5. Detect preference keypoints from the chat
+     6. Return reply + recalled_memory + suggested_preferences
     
     Returns:
         {
-            "reply": str,           # Claude's response
-            "recalled_memory": str  # What Cognee fetched (shown in UI memory panel)
+            "reply": str,
+            "recalled_memory": str,
+            "suggested_preferences": [{"question": "...", "options": ["...","..."], "key": "...", "category": "..."}]
         }
     """
     
-    # Step 1: RECALL — always do this before calling LLM
-    # We query for semantic relevance to the last message, and also fetch general styling preferences
+    # Step 1: RECALL — project scope + user scope (cross-project preferences)
     recalled_semantic = await fetch_memory(user_message, project_id)
     recalled_general = await fetch_memory("What are the project's styling, layout, typography, and theme preferences?", project_id)
+    user_prefs = await fetch_user_preferences(user_id)
     
-    # Merge recalled memories and filter duplicates to build a cohesive memory section
+    # Merge project memories
     recalled_lines = []
     for source in [recalled_general, recalled_semantic]:
         if source:
@@ -82,28 +85,35 @@ async def run_agent(user_message: str, project_id: str) -> dict:
                 line_stripped = line.strip()
                 if line_stripped and line_stripped not in recalled_lines:
                     recalled_lines.append(line_stripped)
-                    
     recalled_combined = "\n".join(recalled_lines)
     
-    # Step 2: BUILD SYSTEM PROMPT — inject memory into context
+    # Format user-level preferences
+    user_prefs_text = "\n".join([f"- {p.get('key','')}: {p.get('value','')} ({p.get('category','')})" for p in user_prefs]) if user_prefs else "None yet"
+    
+    # Step 2: BUILD SYSTEM PROMPT — inject both project and user memory
     memory_section = recalled_combined if recalled_combined else "No previous memory for this project yet."
     
     system_prompt = f"""You are StudioMind, a creative AI design partner with persistent memory.
 
-WHAT YOU REMEMBER ABOUT THIS PROJECT (DESIGN PREFERENCES & GUIDELINES):
+PROJECT MEMORY:
 {memory_section}
 
-RULES & CONSTRAINTS:
-- CRITICAL: Pay extreme attention to the style choices, Obsidian mode background hex codes (#09090b), margins, card sizes, and typography scales if they are in the project memory above. Incorporate them directly and explicitly in your answers when advising on layout, theme, or spacing.
-- Use the memory above to give highly personalized, context-aware design advice.
-- Never ask the user for information that is already in your memory.
-- If the user's question relates to something in memory, reference it explicitly ("I remember you preferred dark palettes...").
-- If memory is empty, ask great discovery questions to start building it.
-- Provide detailed, specific, and actionable design advice. Avoid vague suggestions or generic advice.
-- Be creative and opinionated. You are a senior design director, not a generalist assistant, so give concrete specs, hex codes, or dimensions when appropriate.
-- Focus on design: typography, color, layout, spacing, hierarchy, motion, brand feel."""
+YOUR PERMANENT MEMORY ABOUT THIS USER (ACROSS ALL PROJECTS):
+{user_prefs_text}
 
-    # Step 3: CALL LLM via LangChain
+RULES & CONSTRAINTS:
+- Reference both project-specific and user-wide preferences when relevant.
+- When the user makes a decision about a design style, color, typography, or layout — explicitly acknowledge it as a preference decision.
+- At the END of your response, if you detected any new design preference decision, add a line in EXACTLY this format:
+  ---PREFERENCE_DETECTED---
+  key=<short_key> | value=<the_choice> | category=<color|typography|layout|aesthetic|brand> | question=<MCQ question to confirm> | options=<option1>|<option2>|<option3>
+  ---END_PREFERENCE---
+  Only add this if the user clearly made a choice. One line per preference detected.
+- If no clear decision was made, do NOT add the preference block.
+- Use memory above for personalized advice. Never ask for info already in memory.
+- Be specific, opinionated. Give hex codes, dimensions, font names.""" 
+
+    # Step 3: CALL LLM
     llm = get_llm()
     messages = [
         SystemMessage(content=system_prompt),
@@ -111,14 +121,42 @@ RULES & CONSTRAINTS:
     ]
     
     response = llm.invoke(messages)
-    reply = response.content
+    full_reply = response.content
     
-    # Step 4: REMEMBER this exchange (both sides)
+    # Step 4: PARSE preference suggestions from the response
+    suggested_preferences = []
+    pref_block_pattern = r"---PREFERENCE_DETECTED---\n(.+?)\n---END_PREFERENCE---"
+    pref_block_match = re.search(pref_block_pattern, full_reply, re.DOTALL)
+    
+    if pref_block_match:
+        pref_text = pref_block_match.group(1).strip()
+        # Parse the preference line
+        pref_parts = pref_text.split(" | ")
+        pref_data = {}
+        for part in pref_parts:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                pref_data[k.strip()] = v.strip()
+        if pref_data.get("key") and pref_data.get("value"):
+            suggested_preferences.append({
+                "key": pref_data["key"],
+                "value": pref_data["value"],
+                "category": pref_data.get("category", "general"),
+                "question": pref_data.get("question", f"Save this {pref_data.get('category', 'design')} preference?"),
+                "options": pref_data.get("options", "Yes|Not now").split("|")
+            })
+        # Remove the preference block from the visible reply
+        reply = full_reply[:pref_block_match.start()].strip()
+    else:
+        reply = full_reply
+    
+    # Step 5: REMEMBER this exchange
     memory_entry = f"User asked: {user_message}\nAssistant responded: {reply}"
     await save_memory(memory_entry, project_id)
     
-    # Step 5: RETURN — include recalled_memory so frontend can show it in MemoryPanel
+    # Step 6: RETURN
     return {
       "reply": reply,
-      "recalled_memory": recalled_combined
+      "recalled_memory": recalled_combined,
+      "suggested_preferences": suggested_preferences
     }

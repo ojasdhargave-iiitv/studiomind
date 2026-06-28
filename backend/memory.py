@@ -1,5 +1,6 @@
 import cognee
 import os
+import json
 from cognee.api.v1.visualize.memory_provenance import get_memory_provenance_graph, visualize_memory_provenance
 
 def is_valid_key(key: str) -> bool:
@@ -127,6 +128,46 @@ async def delete_project_memory(project_id: str) -> None:
     Called when user deletes a project from the dashboard.
     """
     await cognee.forget(dataset_name=f"project_{project_id}")
+
+async def save_user_preference(user_id: str, preference: dict) -> None:
+    """
+    Saves a structured preference decision under the user's cross-project namespace.
+    preference example: {"key": "color_palette", "value": "dark_obsidian", "category": "color", "source": "chat"}
+    """
+    entry = f"PREFERENCE | {preference.get('key','')} = {preference.get('value','')} | category={preference.get('category','')} | source={preference.get('source','chat')}"
+    await cognee.remember(entry, dataset_name=f"user_{user_id}", run_in_background=True)
+
+async def fetch_user_preferences(user_id: str) -> list:
+    """
+    Retrieves all structured preference entries for a user across all projects.
+    Returns a list of parsed preference dicts.
+    """
+    try:
+        results = await cognee.recall(
+            query_text="List all design preferences, style choices, and aesthetic decisions",
+            datasets=[f"user_{user_id}"]
+        )
+        if not results:
+            return []
+        parsed = []
+        for r in results:
+            text = str(r)
+            if text.startswith("PREFERENCE |"):
+                parts = text.replace("PREFERENCE | ", "").split(" | ")
+                pref = {}
+                for p in parts:
+                    if "=" in p:
+                        k, v = p.split("=", 1)
+                        pref[k.strip()] = v.strip()
+                    elif p.startswith("category="):
+                        pref["category"] = p.split("=", 1)[1]
+                    elif p.startswith("source="):
+                        pref["source"] = p.split("=", 1)[1]
+                if pref:
+                    parsed.append(pref)
+        return parsed
+    except Exception as e:
+        return []
 
 async def get_memory_graph(project_id: str) -> dict:
     """

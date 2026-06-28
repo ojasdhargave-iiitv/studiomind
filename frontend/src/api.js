@@ -36,8 +36,8 @@ const seedMockDatabase = () => {
   }
 };
 
-// Initialize mock DB
-if (typeof window !== "undefined") {
+// Initialize mock DB (only when USE_MOCK is enabled)
+if (typeof window !== "undefined" && USE_MOCK) {
   seedMockDatabase();
 }
 
@@ -49,6 +49,12 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Send a chat message. Returns { reply, recalled_memory }.
  */
+export const getChatHistory = async (project_id, user_id = "user_demo_001") => {
+  const res = await fetch(`${BASE}/chat/history?project_id=${project_id}&user_id=${user_id}`);
+  if (!res.ok) throw new Error(`History fetch failed: ${res.status}`);
+  return res.json();
+};
+
 export const sendMessage = async (message, project_id) => {
   if (USE_MOCK) {
     await delay(750); // Simulate network latency
@@ -163,7 +169,7 @@ What specific screen or UI component are we designing right now? I'll reference 
   const res = await fetch(`${BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, project_id })
+    body: JSON.stringify({ message, project_id, user_id: "user_demo_001" })
   });
   if (!res.ok) {
     let errorDetail = "";
@@ -323,4 +329,26 @@ export const getMemoryVisualization = async (project_id) => {
   const res = await fetch(`${BASE}/memory/visualize?project_id=${project_id}`);
   if (!res.ok) throw new Error(`Memory visualization fetch failed: ${res.status}`);
   return res.text();
+};
+
+/**
+ * Save a design preference decision to the user's permanent memory (cross-project).
+ */
+export const savePreference = async (user_id, key, value, category) => {
+  const res = await fetch(`${BASE}/preferences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id, key, value, category, source: "popup" })
+  });
+  if (!res.ok) throw new Error(`Save preference failed: ${res.status}`);
+  return res.json();
+};
+
+/**
+ * Fetch all saved preferences for a user (across all projects).
+ */
+export const getPreferences = async (user_id) => {
+  const res = await fetch(`${BASE}/preferences?user_id=${user_id}`);
+  if (!res.ok) throw new Error(`Fetch preferences failed: ${res.status}`);
+  return res.json();
 };
