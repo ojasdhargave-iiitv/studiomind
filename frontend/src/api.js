@@ -1,6 +1,6 @@
 // StudioMind Frontend API Client with Local Mock Capability
 // Set USE_MOCK to false when backend server is ready to be tested!
-const USE_MOCK = true;
+const USE_MOCK = false;
 
 const BASE = "/api"; // Using proxy path configured in vite.config.js
 
@@ -165,7 +165,14 @@ What specific screen or UI component are we designing right now? I'll reference 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, project_id })
   });
-  if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
+  if (!res.ok) {
+    let errorDetail = "";
+    try {
+      const errJson = await res.json();
+      errorDetail = errJson.detail || "";
+    } catch (_) {}
+    throw new Error(errorDetail || `Chat failed with status ${res.status}`);
+  }
   return res.json();
 };
 
@@ -296,4 +303,24 @@ export const getDNA = async (user_id) => {
   const res = await fetch(`${BASE}/dna?user_id=${user_id}`);
   if (!res.ok) throw new Error(`DNA fetch failed: ${res.status}`);
   return res.json();
+};
+
+/**
+ * Fetch the Cognee memory provenance graph (nodes + edges) for a project.
+ * Returns { nodes: [...], edges: [...] }
+ */
+export const getMemoryGraph = async (project_id) => {
+  const res = await fetch(`${BASE}/memory/graph?project_id=${project_id}`);
+  if (!res.ok) throw new Error(`Memory graph fetch failed: ${res.status}`);
+  return res.json();
+};
+
+/**
+ * Get HTML visualization of the Cognee memory provenance graph.
+ * Returns HTML string for embedding in an iframe.
+ */
+export const getMemoryVisualization = async (project_id) => {
+  const res = await fetch(`${BASE}/memory/visualize?project_id=${project_id}`);
+  if (!res.ok) throw new Error(`Memory visualization fetch failed: ${res.status}`);
+  return res.text();
 };

@@ -10,7 +10,9 @@ export default function ChatWindow({
   handleSend, 
   handleFeedback, 
   onInspiration, 
-  onBack 
+  onBack,
+  showMemory,
+  toggleMemory
 }) {
   const [feedbackState, setFeedbackState] = useState({}) // { [msgIndex]: 'thumbsup' | 'thumbsdown' }
   const messagesEndRef = useRef(null)
@@ -108,6 +110,43 @@ export default function ChatWindow({
 
         {/* Right Side: Tab Buttons + Share Action */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <button 
+            onClick={toggleMemory}
+            style={{
+              background: showMemory ? "rgba(139, 92, 246, 0.08)" : "transparent",
+              border: `1px solid ${showMemory ? "#8b5cf6" : "#e2e8f0"}`,
+              color: showMemory ? "#8b5cf6" : "#475569",
+              borderRadius: "10px",
+              padding: "8px 16px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              transition: "all 0.15s"
+            }}
+            onMouseEnter={e => {
+              if (!showMemory) {
+                e.currentTarget.style.background = "#f8fafc"
+                e.currentTarget.style.borderColor = "#cbd5e1"
+              } else {
+                e.currentTarget.style.background = "rgba(139, 92, 246, 0.12)"
+              }
+            }}
+            onMouseLeave={e => {
+              if (!showMemory) {
+                e.currentTarget.style.background = "transparent"
+                e.currentTarget.style.borderColor = "#e2e8f0"
+              } else {
+                e.currentTarget.style.background = "rgba(139, 92, 246, 0.08)"
+                e.currentTarget.style.borderColor = "#8b5cf6"
+              }
+            }}
+          >
+            🧠 {showMemory ? "Hide Memory" : "Show Memory"}
+          </button>
+
           <button 
             onClick={onInspiration}
             style={{

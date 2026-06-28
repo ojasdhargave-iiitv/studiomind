@@ -12,6 +12,7 @@ from memory import init_cognee
 from routes.chat import router as chat_router
 from routes.ingest import router as ingest_router
 from routes.dna import router as dna_router
+from routes.graph import router as graph_router
 
 app = FastAPI(title="StudioMind API", version="1.0.0")
 
@@ -37,6 +38,7 @@ async def startup():
 app.include_router(chat_router)
 app.include_router(ingest_router)
 app.include_router(dna_router)
+app.include_router(graph_router)
 
 @app.get("/health")
 async def health():

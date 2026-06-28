@@ -10,6 +10,8 @@ export default function Chat({ projectId, onBack, onInspiration }) {
   const [memory, setMemory] = useState(null) // What Cognee recalled — shown in panel
   const [error, setError] = useState(null)
 
+  const [showMemory, setShowMemory] = useState(true)
+
   // Load chat history and initial memories from localStorage on mount
   useEffect(() => {
     if (typeof window !== "undefined" && projectId) {
@@ -65,10 +67,21 @@ export default function Chat({ projectId, onBack, onInspiration }) {
       setMessages(newMessagesList)
       
       // Update memory panel with what Cognee recalled
-      setMemory(result.recalled_memory || "")
+      const recalledMem = result.recalled_memory || ""
+      setMemory(recalledMem)
+      if (recalledMem) {
+        localStorage.setItem(`studiomind_memories_${projectId}`, JSON.stringify(recalledMem.split("\n")))
+      }
     } catch (err) {
       console.error(err)
-      setError("Failed to communicate with StudioMind partner. Please check your connection.")
+      const errStr = err.message || "";
+      if (errStr.includes("generativelanguage") || errStr.includes("Gemini") || errStr.includes("Quota exceeded")) {
+        setError("Your Google Gemini API key has exceeded its free tier quota limit. Please wait and try again later, or configure a different API key in backend/.env.");
+      } else if (errStr.includes("余额不足") || errStr.includes("1113") || errStr.includes("429")) {
+        setError("API Rate Limit Exceeded (429) or Insufficient Balance. If using Groq/OpenAI, you may have hit a rate limit. Please wait a moment and try again, or check your API provider dashboard.");
+      } else {
+        setError(errStr || "Failed to communicate with StudioMind partner. Please check your connection.");
+      }
     } finally {
       setLoading(false)
     }
@@ -92,7 +105,7 @@ export default function Chat({ projectId, onBack, onInspiration }) {
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100%", width: "100%", overflow: "hidden" }}>
       {/* Central Chat Window Area */}
       <ChatWindow
         projectId={projectId}
@@ -105,10 +118,12 @@ export default function Chat({ projectId, onBack, onInspiration }) {
         handleFeedback={handleFeedback}
         onInspiration={onInspiration}
         onBack={onBack}
+        showMemory={showMemory}
+        toggleMemory={() => setShowMemory(!showMemory)}
       />
       
       {/* Right side: Memory Panel */}
-      <MemoryPanel memory={memory} />
+      {showMemory && <MemoryPanel memory={memory} />}
     </div>
   )
 }
